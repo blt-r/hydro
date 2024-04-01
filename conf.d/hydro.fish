@@ -12,24 +12,24 @@ function _hydro_pretty_path
         string replace --regex --all -- '(?!^/$)/|^$' "\x1b[2m/\x1b[22m"
 end
 
-function _hydro_pwd --on-variable PWD --on-variable hydro_ignored_git_paths --on-variable hydro_pwd_dir_length
+function _hydro_pwd --on-variable PWD --on-variable hydro_ignored_git_paths --on-variable hydro_pwd_dir_length --on-variable HOME
     if test "$hydro_pwd_dir_length" = 0
         set --global _hydro_pwd (path basename $PWD)
         return
     end
 
-    set --local dir (string replace --regex -- "^$(string escape --style=regex -- ~)" '~' $PWD)
 
-    if ! set --query _hydro_git_root[1]
+    if not set --query _hydro_git_root[1]
+        set --local dir (string replace --regex -- "^$HOME" '~' $PWD)
         set --global _hydro_pwd (_hydro_pretty_path $dir)
     else
-        set --local git_dir (string replace --regex -- "^$(string escape --style=regex -- ~)" '~' $_hydro_git_root)
-        set --local after_git (string replace -- "$git_dir" "" "$dir")
+        set --local git_dir (string replace --regex -- "^$HOME" '~' $_hydro_git_root)
+        set --local after_git (string replace -- "$_hydro_git_root" "" "$PWD")
 
-        if test -z $after_git
-            set --global _hydro_pwd (_hydro_pretty_path $dir)
+        if test -z "$after_git"
+            set --global _hydro_pwd (_hydro_pretty_path $git_dir)
         else
-            set --global _hydro_pwd "$(_hydro_pretty_path $git_dir)$(_hydro_pretty_path $after_git)"
+            set --global _hydro_pwd (_hydro_pretty_path $git_dir)(_hydro_pretty_path $after_git)
         end
     end
 end
@@ -40,7 +40,7 @@ function _hydro_postexec --on-event fish_postexec
 
     for code in $last_status
         if test $code -ne 0
-            set --global _hydro_status "$_hydro_color_error| "(echo $last_status)" $_hydro_newline$_hydro_color_prompt$_hydro_color_error$hydro_symbol_prompt"
+            set --global _hydro_status "$_hydro_color_error| $last_status $_hydro_newline$hydro_symbol_prompt"
             break
         end
     end
@@ -62,7 +62,6 @@ end
 
 function _hydro_prompt --on-event fish_prompt
     set --query _hydro_status || set --global _hydro_status "$_hydro_newline$_hydro_color_prompt$hydro_symbol_prompt"
-    set --query _hydro_pwd || _hydro_pwd
 
     command kill $_hydro_last_pid 2>/dev/null
 
@@ -71,9 +70,11 @@ function _hydro_prompt --on-event fish_prompt
     if test "$git_root" != "$_hydro_git_root"
         set --global _hydro_git_root $git_root
         _hydro_pwd
+    else if not set --query _hydro_pwd
+        _hydro_pwd
     end
 
-    if ! set --query _hydro_git_root[1] || contains -- "$_hydro_git_root" $hydro_ignored_git_paths 
+    if not set --query _hydro_git_root[1] || contains -- "$_hydro_git_root" $hydro_ignored_git_paths
         set $_hydro_git
         return
     end
@@ -88,7 +89,7 @@ function _hydro_prompt --on-event fish_prompt
 
         test -z \"\$$_hydro_git\" && set --universal $_hydro_git \"\$branch \"
 
-        ! command git diff-index --quiet HEAD 2>/dev/null ||
+        not command git diff-index --quiet HEAD 2>/dev/null ||
             count (command git ls-files --others --exclude-standard) >/dev/null && set info \"$hydro_symbol_git_dirty\"
 
         for fetch in $hydro_fetch false
